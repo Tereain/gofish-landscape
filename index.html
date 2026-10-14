@@ -1,0 +1,857 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Go Fish — Landscape</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  background: #0d5c2e;
+  font-family: system-ui, -apple-system, sans-serif;
+  color: #fff;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+body {
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+/* Orientation lock hint */
+#orient-hint {
+  position: fixed;
+  inset: 0;
+  background: #0d5c2e;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  text-align: center;
+  padding: 2rem;
+}
+#orient-hint.visible { display: flex; }
+#orient-hint h2 { font-size: 1.5rem; margin-bottom: 0.5rem; }
+#orient-hint p { opacity: 0.8; }
+
+/* Table */
+#table {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+  transition: all 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Opponent hand */
+#opp-hand {
+  height: 28%;
+  min-height: 90px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 8px 40px 0 20px;
+  transition: height 0.45s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.3s;
+  overflow: hidden;
+  position: relative;
+  z-index: 2;
+}
+#opp-hand.hidden {
+  height: 0;
+  min-height: 0;
+  opacity: 0;
+  padding: 0;
+}
+.fan {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  position: relative;
+  height: 100%;
+  width: 100%;
+}
+.card {
+  width: 48px;
+  height: 68px;
+  border-radius: 6px;
+  background: #fff;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.35);
+  position: absolute;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 14px;
+  border: 1px solid #ccc;
+  transition: transform 0.2s, opacity 0.2s;
+  cursor: pointer;
+}
+.card.back {
+  background: linear-gradient(135deg, #1a3a6b, #2a5a9b);
+  border: 2px solid #4a7abf;
+  color: transparent;
+}
+.card.back::after {
+  content: "🂠";
+  font-size: 28px;
+  color: rgba(255,255,255,0.9);
+}
+.card.red { color: #c0392b; }
+.card.black { color: #1a1a1a; }
+.card .rank { font-size: 16px; line-height: 1; }
+.card .suit { font-size: 18px; line-height: 1; }
+.card.small { width: 42px; height: 60px; font-size: 12px; }
+.card.small .rank { font-size: 13px; }
+.card.small .suit { font-size: 15px; }
+
+/* Center piles */
+#center {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 40px;
+  position: relative;
+  z-index: 1;
+  min-height: 80px;
+}
+.pile {
+  width: 56px;
+  height: 78px;
+  border-radius: 6px;
+  background: rgba(255,255,255,0.12);
+  border: 2px dashed rgba(255,255,255,0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  font-size: 11px;
+  position: relative;
+}
+.pile .count {
+  font-size: 18px;
+  font-weight: 700;
+  margin-top: 2px;
+}
+.pile.draw { background: linear-gradient(135deg, #1a3a6b, #2a5a9b); border-style: solid; border-color: #4a7abf; }
+.pile.draw::before {
+  content: "🂠";
+  font-size: 32px;
+}
+
+/* Player hand area (expanded) */
+#player-hand-area {
+  height: 0;
+  overflow: hidden;
+  transition: height 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0 50px 12px 12px;
+  position: relative;
+  z-index: 3;
+  background: linear-gradient(transparent, rgba(0,0,0,0.25));
+}
+#player-hand-area.expanded {
+  height: 110px;
+}
+#player-fan {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  position: relative;
+  width: 100%;
+  height: 90px;
+}
+#player-fan .card {
+  position: absolute;
+  bottom: 0;
+  cursor: grab;
+  touch-action: none;
+}
+#player-fan .card:active { cursor: grabbing; }
+#player-fan .card.flying {
+  transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.45s;
+  z-index: 100;
+  pointer-events: none;
+}
+.more-indicator {
+  position: absolute;
+  right: 8px;
+  bottom: 20px;
+  background: rgba(0,0,0,0.55);
+  color: #fff;
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  pointer-events: none;
+}
+
+/* Hand drawer button */
+#hand-btn {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.95);
+  color: #0d5c2e;
+  border: none;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  font-size: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 20;
+  cursor: pointer;
+  transition: transform 0.15s, background 0.2s;
+}
+#hand-btn:active { transform: scale(0.94); }
+#hand-btn.empty {
+  background: rgba(255,255,255,0.4);
+  color: rgba(255,255,255,0.7);
+}
+#hand-btn .badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  background: #e74c3c;
+  color: white;
+  font-size: 11px;
+  font-weight: 700;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+}
+#hand-btn.empty .badge { display: none; }
+
+/* Right slider */
+#slider-track {
+  position: fixed;
+  right: 6px;
+  top: 20%;
+  bottom: 100px;
+  width: 28px;
+  background: rgba(255,255,255,0.15);
+  border-radius: 14px;
+  z-index: 15;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  touch-action: none;
+}
+#slider-thumb {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  margin-bottom: 4px;
+  cursor: grab;
+  transition: transform 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  color: #0d5c2e;
+}
+#slider-thumb:active { cursor: grabbing; transform: scale(1.05); }
+
+/* Status / message */
+#status {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0,0,0,0.55);
+  padding: 6px 14px;
+  border-radius: 16px;
+  font-size: 13px;
+  z-index: 10;
+  max-width: 70%;
+  text-align: center;
+  pointer-events: none;
+}
+#scores {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  font-size: 12px;
+  opacity: 0.85;
+  z-index: 10;
+  line-height: 1.3;
+}
+#scores .you { color: #a8e6cf; }
+#scores .ai { color: #ffb3b3; }
+
+/* Start overlay */
+#start-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(13, 92, 46, 0.96);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  text-align: center;
+  padding: 1.5rem;
+}
+#start-overlay h1 { font-size: 2.2rem; margin-bottom: 0.5rem; }
+#start-overlay p { opacity: 0.85; margin-bottom: 1.5rem; max-width: 320px; }
+#start-btn {
+  background: #fff;
+  color: #0d5c2e;
+  border: none;
+  padding: 14px 32px;
+  border-radius: 28px;
+  font-size: 1.1rem;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+}
+#start-btn:active { transform: scale(0.97); }
+
+/* Game over */
+#gameover {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.75);
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  text-align: center;
+  padding: 1.5rem;
+}
+#gameover.visible { display: flex; }
+#gameover h2 { font-size: 1.8rem; margin-bottom: 0.5rem; }
+#gameover button {
+  margin-top: 1.2rem;
+  background: #fff;
+  color: #0d5c2e;
+  border: none;
+  padding: 12px 28px;
+  border-radius: 24px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+@media (max-height: 420px) {
+  .card { width: 40px; height: 56px; }
+  #opp-hand { min-height: 70px; }
+  #player-hand-area.expanded { height: 90px; }
+}
+@media (max-width: 480px) {
+  .card { width: 42px; height: 60px; }
+}
+</style>
+</head>
+<body>
+<div id="orient-hint">
+  <h2>Rotate to Landscape</h2>
+  <p>Go Fish is designed for horizontal play. Turn your phone sideways.</p>
+</div>
+
+<div id="start-overlay">
+  <h1>Go Fish</h1>
+  <p>Single-player · Landscape table<br>Swipe a card up to ask for its rank.</p>
+  <button id="start-btn">Deal Cards</button>
+</div>
+
+<div id="table">
+  <div id="opp-hand">
+    <div class="fan" id="opp-fan"></div>
+  </div>
+  <div id="center">
+    <div class="pile draw" id="draw-pile">
+      <span class="count" id="draw-count">0</span>
+    </div>
+    <div class="pile" id="books-pile">
+      Books
+      <span class="count" id="books-count">0</span>
+    </div>
+  </div>
+  <div id="player-hand-area">
+    <div id="player-fan"></div>
+    <div class="more-indicator" id="more-ind" style="display:none;">+more</div>
+  </div>
+</div>
+
+<button id="hand-btn" title="Your hand">
+  🖐️
+  <span class="badge" id="hand-badge">0</span>
+</button>
+
+<div id="slider-track" id="slider">
+  <div id="slider-thumb">▲</div>
+</div>
+
+<div id="status">Your turn — open your hand and swipe a card up</div>
+<div id="scores">
+  <div class="you">You: 0 books</div>
+  <div class="ai">AI: 0 books</div>
+</div>
+
+<div id="gameover">
+  <h2 id="go-title">Game Over</h2>
+  <p id="go-msg"></p>
+  <button id="restart-btn">Play Again</button>
+</div>
+
+<script>
+// --- Game state ---
+const SUITS = ['♠','♥','♦','♣'];
+const RANKS = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
+const RED_SUITS = new Set(['♥','♦']);
+
+let deck = [];
+let playerHand = [];
+let aiHand = [];
+let playerBooks = 0;
+let aiBooks = 0;
+let turn = 'player'; // 'player' | 'ai'
+let handExpanded = false;
+let sliderValue = 0; // 0 = down (opp visible), 1 = up (opp hidden)
+let animating = false;
+
+// --- DOM ---
+const oppFan = document.getElementById('opp-fan');
+const playerFan = document.getElementById('player-fan');
+const playerArea = document.getElementById('player-hand-area');
+const handBtn = document.getElementById('hand-btn');
+const handBadge = document.getElementById('hand-badge');
+const oppHand = document.getElementById('opp-hand');
+const drawCount = document.getElementById('draw-count');
+const booksCount = document.getElementById('books-count');
+const statusEl = document.getElementById('status');
+const scoresYou = document.querySelector('#scores .you');
+const scoresAi = document.querySelector('#scores .ai');
+const startOverlay = document.getElementById('start-overlay');
+const gameover = document.getElementById('gameover');
+const orientHint = document.getElementById('orient-hint');
+const moreInd = document.getElementById('more-ind');
+const sliderThumb = document.getElementById('slider-thumb');
+const sliderTrack = document.getElementById('slider-track');
+
+// --- Orientation ---
+function checkOrient() {
+  const isPortrait = window.innerHeight > window.innerWidth;
+  orientHint.classList.toggle('visible', isPortrait && startOverlay.style.display !== 'none' || isPortrait);
+  if (isPortrait) {
+    // still allow, but show hint
+  }
+}
+window.addEventListener('resize', checkOrient);
+window.addEventListener('orientationchange', checkOrient);
+checkOrient();
+
+// --- Deck ---
+function makeDeck() {
+  const d = [];
+  for (const s of SUITS) {
+    for (const r of RANKS) {
+      d.push({ rank: r, suit: s, id: r + s });
+    }
+  }
+  // shuffle
+  for (let i = d.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [d[i], d[j]] = [d[j], d[i]];
+  }
+  return d;
+}
+
+function deal() {
+  deck = makeDeck();
+  playerHand = deck.splice(0, 7);
+  aiHand = deck.splice(0, 7);
+  playerBooks = 0;
+  aiBooks = 0;
+  turn = 'player';
+  handExpanded = false;
+  setSlider(0, false);
+  updateAll();
+  statusEl.textContent = 'Your turn — open hand & swipe a card up';
+  startOverlay.style.display = 'none';
+  gameover.classList.remove('visible');
+}
+
+function cardEl(card, faceDown = false, small = false) {
+  const el = document.createElement('div');
+  el.className = 'card' + (faceDown ? ' back' : '') + (small ? ' small' : '') + (!faceDown && RED_SUITS.has(card.suit) ? ' red' : ' black');
+  el.dataset.rank = card.rank;
+  el.dataset.suit = card.suit;
+  el.dataset.id = card.id;
+  if (!faceDown) {
+    el.innerHTML = `<div class="rank">${card.rank}</div><div class="suit">${card.suit}</div>`;
+  }
+  return el;
+}
+
+function renderOpp() {
+  oppFan.innerHTML = '';
+  const n = aiHand.length;
+  const maxShow = Math.min(n, window.innerWidth < 500 ? 8 : 12);
+  const step = Math.min(28, (window.innerWidth - 100) / Math.max(maxShow, 1));
+  const start = -((maxShow - 1) * step) / 2;
+  for (let i = 0; i < maxShow; i++) {
+    const c = cardEl(aiHand[i] || {rank:'?',suit:'?'}, true, n > 10);
+    const rot = (i - maxShow/2) * 4;
+    c.style.transform = `translateX(${start + i * step}px) rotate(${rot}deg)`;
+    c.style.zIndex = i;
+    oppFan.appendChild(c);
+  }
+  if (n > maxShow) {
+    // simple indicator via title or extra
+  }
+}
+
+function renderPlayer() {
+  playerFan.innerHTML = '';
+  const n = playerHand.length;
+  if (n === 0) {
+    moreInd.style.display = 'none';
+    return;
+  }
+  const maxShow = window.innerWidth < 480 ? 6 : 9;
+  const show = Math.min(n, maxShow);
+  const step = Math.min(42, (window.innerWidth - 80) / Math.max(show, 1));
+  const start = -((show - 1) * step) / 2;
+  for (let i = 0; i < show; i++) {
+    const card = playerHand[i];
+    const el = cardEl(card, false, show > 7);
+    const rot = (i - show/2) * 3.5;
+    el.style.transform = `translateX(${start + i * step}px) rotate(${rot}deg)`;
+    el.style.zIndex = i + 1;
+    el.dataset.idx = i;
+    attachSwipe(el, card);
+    playerFan.appendChild(el);
+  }
+  moreInd.style.display = n > show ? 'block' : 'none';
+  moreInd.textContent = `+${n - show}`;
+}
+
+function updateCounts() {
+  drawCount.textContent = deck.length;
+  booksCount.textContent = playerBooks + aiBooks;
+  handBadge.textContent = playerHand.length;
+  handBtn.classList.toggle('empty', playerHand.length === 0 || turn !== 'player');
+  scoresYou.textContent = `You: ${playerBooks} books`;
+  scoresAi.textContent = `AI: ${aiBooks} books`;
+}
+
+function updateAll() {
+  renderOpp();
+  renderPlayer();
+  updateCounts();
+  playerArea.classList.toggle('expanded', handExpanded);
+}
+
+// --- Hand drawer ---
+handBtn.addEventListener('click', () => {
+  if (turn !== 'player' || animating) return;
+  handExpanded = !handExpanded;
+  updateAll();
+});
+
+function collapseHand() {
+  handExpanded = false;
+  updateAll();
+}
+
+// --- Swipe to play ---
+function attachSwipe(el, card) {
+  let startY = 0;
+  let startX = 0;
+  let dragging = false;
+  let origTransform = el.style.transform;
+
+  const onStart = (e) => {
+    if (turn !== 'player' || animating) return;
+    const t = e.touches ? e.touches[0] : e;
+    startY = t.clientY;
+    startX = t.clientX;
+    dragging = true;
+    el.style.transition = 'none';
+    el.style.zIndex = 200;
+  };
+  const onMove = (e) => {
+    if (!dragging) return;
+    const t = e.touches ? e.touches[0] : e;
+    const dy = startY - t.clientY;
+    const dx = t.clientX - startX;
+    if (dy > 10) {
+      el.style.transform = origTransform + ` translate(${dx}px, ${-dy}px)`;
+    }
+  };
+  const onEnd = (e) => {
+    if (!dragging) return;
+    dragging = false;
+    const t = e.changedTouches ? e.changedTouches[0] : e;
+    const dy = startY - t.clientY;
+    el.style.transition = '';
+    if (dy > 50) {
+      // Play this card (ask for its rank)
+      playCard(card, el);
+    } else {
+      el.style.transform = origTransform;
+      el.style.zIndex = '';
+    }
+  };
+
+  el.addEventListener('touchstart', onStart, {passive: true});
+  el.addEventListener('touchmove', onMove, {passive: true});
+  el.addEventListener('touchend', onEnd);
+  el.addEventListener('mousedown', onStart);
+  window.addEventListener('mousemove', onMove);
+  window.addEventListener('mouseup', onEnd);
+}
+
+function playCard(card, el) {
+  if (animating || turn !== 'player') return;
+  animating = true;
+  statusEl.textContent = `Asking for ${card.rank}s…`;
+
+  // Animate fly to center
+  const rect = el.getBoundingClientRect();
+  const center = document.getElementById('center').getBoundingClientRect();
+  const dx = center.left + center.width/2 - (rect.left + rect.width/2);
+  const dy = center.top + center.height/2 - (rect.top + rect.height/2);
+  el.classList.add('flying');
+  el.style.transform = `translate(${dx}px, ${dy}px) scale(0.6) rotate(15deg)`;
+  el.style.opacity = '0.7';
+
+  setTimeout(() => {
+    el.remove();
+    doAsk(card.rank);
+  }, 420);
+}
+
+function doAsk(rank) {
+  // Check if AI has any of this rank
+  const matching = aiHand.filter(c => c.rank === rank);
+  if (matching.length > 0) {
+    // Transfer
+    matching.forEach(c => {
+      aiHand = aiHand.filter(x => x.id !== c.id);
+      playerHand.push(c);
+    });
+    statusEl.textContent = `AI gave you ${matching.length} ${rank}${matching.length>1?'s':''}!`;
+    checkBooks('player');
+    updateAll();
+    // Player goes again
+    setTimeout(() => {
+      animating = false;
+      if (playerHand.length === 0 || deck.length === 0 && aiHand.length === 0) {
+        endGame();
+      } else {
+        statusEl.textContent = 'Your turn again — swipe another card';
+        // keep hand open if still has cards
+        if (playerHand.length > 0) handExpanded = true;
+        updateAll();
+      }
+    }, 700);
+  } else {
+    // Go Fish
+    statusEl.textContent = 'Go Fish!';
+    setTimeout(() => {
+      if (deck.length > 0) {
+        const drawn = deck.pop();
+        playerHand.push(drawn);
+        statusEl.textContent = `You drew a ${drawn.rank}${drawn.suit}`;
+        checkBooks('player');
+        updateAll();
+        if (drawn.rank === rank) {
+          // continue
+          setTimeout(() => {
+            animating = false;
+            statusEl.textContent = 'You caught it — go again!';
+            handExpanded = true;
+            updateAll();
+          }, 600);
+          return;
+        }
+      } else {
+        statusEl.textContent = 'No cards left to draw.';
+      }
+      // End turn
+      setTimeout(() => {
+        collapseHand();
+        turn = 'ai';
+        animating = false;
+        setSlider(0, true); // auto reset slider down
+        statusEl.textContent = 'AI thinking…';
+        setTimeout(aiTurn, 900);
+      }, 800);
+    }, 500);
+  }
+}
+
+function checkBooks(who) {
+  const hand = who === 'player' ? playerHand : aiHand;
+  const ranks = {};
+  hand.forEach(c => {
+    ranks[c.rank] = (ranks[c.rank] || 0) + 1;
+  });
+  for (const r in ranks) {
+    if (ranks[r] >= 4) {
+      // remove 4
+      let removed = 0;
+      for (let i = hand.length - 1; i >= 0 && removed < 4; i--) {
+        if (hand[i].rank === r) {
+          hand.splice(i, 1);
+          removed++;
+        }
+      }
+      if (who === 'player') playerBooks++;
+      else aiBooks++;
+      statusEl.textContent = `${who === 'player' ? 'You' : 'AI'} completed a book of ${r}s!`;
+    }
+  }
+  updateCounts();
+}
+
+function aiTurn() {
+  if (aiHand.length === 0) {
+    // AI draws or ends
+    if (deck.length > 0) {
+      aiHand.push(deck.pop());
+      checkBooks('ai');
+    }
+    if (aiHand.length === 0) {
+      endGame();
+      return;
+    }
+  }
+  // Simple AI: pick random rank it holds
+  const ranks = [...new Set(aiHand.map(c => c.rank))];
+  const ask = ranks[Math.floor(Math.random() * ranks.length)];
+  statusEl.textContent = `AI asks for ${ask}s`;
+
+  setTimeout(() => {
+    const matching = playerHand.filter(c => c.rank === ask);
+    if (matching.length > 0) {
+      matching.forEach(c => {
+        playerHand = playerHand.filter(x => x.id !== c.id);
+        aiHand.push(c);
+      });
+      statusEl.textContent = `You gave AI ${matching.length} ${ask}${matching.length>1?'s':''}`;
+      checkBooks('ai');
+      updateAll();
+      // AI continues
+      setTimeout(aiTurn, 1000);
+    } else {
+      statusEl.textContent = 'You say Go Fish!';
+      setTimeout(() => {
+        if (deck.length > 0) {
+          const drawn = deck.pop();
+          aiHand.push(drawn);
+          checkBooks('ai');
+          updateAll();
+          if (drawn.rank === ask) {
+            statusEl.textContent = 'AI caught it and goes again';
+            setTimeout(aiTurn, 900);
+            return;
+          }
+        }
+        // End AI turn
+        turn = 'player';
+        animating = false;
+        handExpanded = false;
+        updateAll();
+        statusEl.textContent = 'Your turn — open hand & swipe a card';
+        setSlider(0, true);
+        if (playerHand.length === 0 && deck.length === 0) endGame();
+      }, 700);
+    }
+  }, 700);
+}
+
+function endGame() {
+  animating = false;
+  const msg = playerBooks > aiBooks ? 'You win!' : playerBooks < aiBooks ? 'AI wins.' : 'It\'s a tie!';
+  document.getElementById('go-title').textContent = msg;
+  document.getElementById('go-msg').textContent = `You: ${playerBooks} books · AI: ${aiBooks} books`;
+  gameover.classList.add('visible');
+  statusEl.textContent = 'Game over';
+}
+
+// --- Slider ---
+function setSlider(val, animate = true) {
+  sliderValue = Math.max(0, Math.min(1, val));
+  const trackH = sliderTrack.clientHeight - 40;
+  const y = (1 - sliderValue) * trackH;
+  sliderThumb.style.transition = animate ? 'transform 0.45s cubic-bezier(0.22,1,0.36,1)' : 'none';
+  sliderThumb.style.transform = `translateY(${-y}px)`;
+  // Hide opp hand as slider goes up
+  const hide = sliderValue > 0.45;
+  oppHand.classList.toggle('hidden', hide);
+}
+
+let sliderDrag = false;
+let sliderStartY = 0;
+let sliderStartVal = 0;
+
+sliderThumb.addEventListener('touchstart', (e) => {
+  sliderDrag = true;
+  sliderStartY = e.touches[0].clientY;
+  sliderStartVal = sliderValue;
+  sliderThumb.style.transition = 'none';
+  e.preventDefault();
+}, {passive: false});
+sliderThumb.addEventListener('mousedown', (e) => {
+  sliderDrag = true;
+  sliderStartY = e.clientY;
+  sliderStartVal = sliderValue;
+  sliderThumb.style.transition = 'none';
+});
+
+function onSliderMove(e) {
+  if (!sliderDrag) return;
+  const y = e.touches ? e.touches[0].clientY : e.clientY;
+  const dy = sliderStartY - y;
+  const trackH = sliderTrack.clientHeight - 40;
+  const delta = dy / trackH;
+  setSlider(sliderStartVal + delta, false);
+}
+function onSliderEnd() {
+  if (!sliderDrag) return;
+  sliderDrag = false;
+  // snap lightly
+  setSlider(sliderValue > 0.5 ? 1 : 0, true);
+}
+window.addEventListener('touchmove', onSliderMove, {passive: true});
+window.addEventListener('touchend', onSliderEnd);
+window.addEventListener('mousemove', onSliderMove);
+window.addEventListener('mouseup', onSliderEnd);
+
+// Init slider position
+setTimeout(() => setSlider(0, false), 100);
+
+// --- Start / restart ---
+document.getElementById('start-btn').addEventListener('click', deal);
+document.getElementById('restart-btn').addEventListener('click', () => {
+  gameover.classList.remove('visible');
+  startOverlay.style.display = 'flex';
+});
+
+// Auto-hide orient hint after a bit if landscape
+setTimeout(checkOrient, 300);
+</script>
+</body>
+</html>
